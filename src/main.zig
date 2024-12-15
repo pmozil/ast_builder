@@ -5,8 +5,8 @@ const tok = @import("tok");
 pub fn main() !void {
     const delims = " \n\r";
     const tokenMap = tok.TokenMap.initComptime(&.{
-        .{"a", 10},
-        .{"ab", 10},
+        .{"a", tok.TokenType{.tokenType = 10}},
+        .{"ab", tok.TokenType{.tokenType = 10, .priority = 0}},
     });
     const MyTokenizer = tok.Tokenizer(tokenMap, delims);
 
@@ -21,7 +21,7 @@ pub fn main() !void {
             std.debug.print("Error: out of input stream\n", .{});
             break;
         };
-        std.debug.print("Type: {}, Value: {s}\n", .{token.tokenType orelse 0, token.value});
+        std.debug.print("Type: {}, Value: {s}\n", .{token.tokenType.tokenType orelse 0, token.value});
     }
 }
 

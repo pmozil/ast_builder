@@ -5,11 +5,14 @@ pub const TokError = error{
     IdxError,
 };
 
-pub const TokenType: type = usize;
+pub const TokenType: type = struct {
+    tokenType: ?usize = null,
+    priority: isize = std.math.minInt(isize),
+};
 pub const TokenMap: type = std.StaticStringMap(TokenType);
 
 pub const Token: type = struct {
-    tokenType: ?TokenType,
+    tokenType: TokenType,
     value: [] const u8,
 };
 
@@ -65,17 +68,28 @@ pub fn Tokenizer(comptime tokenMap: TokenMap, comptime delims: [] const u8) type
             if (self.cur_idx >= streamSize) {
                 return TokError.IdxError;
             }
+            const begIdx = self.cur_idx;
 
             var tokLength: usize = @min(@as(usize, maxTokLength), streamSize - self.cur_idx);
-
-            const begIdx = self.cur_idx;
+            var tokSize: ?usize = null;
+            var tokType: TokenType = TokenType{
+                .tokenType = null,
+                .priority = std.math.minInt(isize),
+            };
             while (tokLength > 0) : (tokLength -= 1) {
-                const isTok = is_token(&self.in_stream[begIdx..(begIdx+tokLength)]);
+                const curTokStr = self.in_stream[begIdx..(begIdx+tokLength)];
+                const isTok = is_token(&curTokStr);
+
                 if (isTok) {
-                    return tokLength;
+                    const curTokType = tokenMap.get(curTokStr).?;
+                    if (tokType.priority < curTokType.priority) {
+                        tokType = curTokType;
+                        tokSize = tokLength;
+                    }
                 }
             }
-            return null;
+
+            return tokSize;
         }
 
         pub fn get_next_token(self: *Self) TokError!Token {
@@ -93,7 +107,7 @@ pub fn Tokenizer(comptime tokenMap: TokenMap, comptime delims: [] const u8) type
                 const tokStr = self.in_stream[self.cur_idx..(self.cur_idx + tokEndIdx.?)];
                 self.cur_idx += tokEndIdx.?;
                 return Token {
-                    .tokenType = tokenMap.get(tokStr) orelse null,
+                    .tokenType = tokenMap.get(tokStr) orelse .{},
                     .value = tokStr,
                 };
             }
@@ -110,7 +124,7 @@ pub fn Tokenizer(comptime tokenMap: TokenMap, comptime delims: [] const u8) type
 
             const curStr = self.in_stream[begIdx..self.cur_idx];
             return Token {
-                .tokenType = tokenMap.get(curStr) orelse null,
+                .tokenType = tokenMap.get(curStr) orelse .{},
                 .value = curStr[0..],
             };
         }

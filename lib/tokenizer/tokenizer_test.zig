@@ -4,8 +4,8 @@ const tok = @import("tokenizer.zig");
 test "Test tokenizer" {
     const delims = " \n\r";
     const tokenMap = tok.TokenMap.initComptime(&.{
-        .{"a", tok.TokenType{.tokenType = 1}},
-        .{"ab", tok.TokenType{.tokenType = 10, .priority = 0}},
+        .{"a", tok.TokenType{.tokenType = 1, .breakOnToken = true}},
+        .{"ab", tok.TokenType{.tokenType = 10, .priority = 0, .breakOnToken = true}},
     });
     const MyTokenizer = tok.Tokenizer(tokenMap, delims);
 
@@ -53,7 +53,31 @@ test "Test tokenizer" {
     };
     try std.testing.expectEqual(token.tokenType.tokenType, null);
     try std.testing.expectEqual(token.tokenType.priority, std.math.minInt(isize));
-    try std.testing.expect(std.mem.eql(u8, token.value, "baaba"));
+    try std.testing.expect(std.mem.eql(u8, token.value, "b"));
+
+    token = tk.get_next_token() catch |err| {
+        std.debug.print("Error: out of input stream\n", .{});
+        return err;
+    };
+    try std.testing.expectEqual(token.tokenType.tokenType, 1);
+    try std.testing.expectEqual(token.tokenType.priority, std.math.minInt(isize));
+    try std.testing.expect(std.mem.eql(u8, token.value, "a"));
+
+    token = tk.get_next_token() catch |err| {
+        std.debug.print("Error: out of input stream\n", .{});
+        return err;
+    };
+    try std.testing.expectEqual(token.tokenType.tokenType, 10);
+    try std.testing.expectEqual(token.tokenType.priority, 0);
+    try std.testing.expect(std.mem.eql(u8, token.value, "ab"));
+
+    token = tk.get_next_token() catch |err| {
+        std.debug.print("Error: out of input stream\n", .{});
+        return err;
+    };
+    try std.testing.expectEqual(token.tokenType.tokenType, 1);
+    try std.testing.expectEqual(token.tokenType.priority, std.math.minInt(isize));
+    try std.testing.expect(std.mem.eql(u8, token.value, "a"));
 
     token = tk.get_next_token() catch |err| {
         std.debug.print("Error: out of input stream\n", .{});

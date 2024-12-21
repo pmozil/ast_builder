@@ -8,7 +8,9 @@ pub const TokError = error{
 pub const TokenType: type = struct {
     tokenType: ?usize = null,
     priority: isize = std.math.minInt(isize),
+    breakOnToken: bool = false,
 };
+
 pub const TokenMap: type = std.StaticStringMap(TokenType);
 
 pub const Token: type = struct {
@@ -113,12 +115,39 @@ pub fn Tokenizer(comptime tokenMap: TokenMap, comptime delims: [] const u8) type
 
             var isWhitespace: bool = false;
             while (!isWhitespace) : (self.cur_idx += 1) {
+                const isStandardToken: ?usize = self.try_find_token() catch {
+                    // We reached the end of string - return until end of string
+                    const curStr = self.in_stream[begIdx..];
+                    return Token {
+                        .tokenType = tokenMap.get(curStr) orelse .{},
+                        .value = curStr,
+                    };
+                };
+
+                if (isStandardToken) |tokLen| {
+                    const token: TokenType = tokenMap.get(
+                        self.in_stream[self.cur_idx..(self.cur_idx + tokLen)]
+                    ) orelse .{};
+
+                    if (token.breakOnToken) {
+                        // Found a standard token that should be always parsed as itself,
+                        // e. g. a '+' instead of an "if"
+                        // so we stop and the return the unknown data,
+                        // but then we return a token
+                        const curStr = self.in_stream[begIdx..self.cur_idx];
+                        return Token {
+                            .tokenType = tokenMap.get(curStr) orelse .{},
+                            .value = curStr,
+                        };
+                    }
+                }
+
                 isWhitespace = self.is_whitespace() catch {
                     // We reached the end of string - return until end of string
                     const curStr = self.in_stream[begIdx..];
                     return Token {
                         .tokenType = tokenMap.get(curStr) orelse .{},
-                        .value = curStr[0..],
+                        .value = curStr,
                     };
                 };
             }
@@ -127,7 +156,7 @@ pub fn Tokenizer(comptime tokenMap: TokenMap, comptime delims: [] const u8) type
             const curStr = self.in_stream[begIdx..(self.cur_idx - 1)];
             return Token {
                 .tokenType = tokenMap.get(curStr) orelse .{},
-                .value = curStr[0..],
+                .value = curStr,
             };
         }
     };

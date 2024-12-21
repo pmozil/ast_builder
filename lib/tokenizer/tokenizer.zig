@@ -42,10 +42,7 @@ pub fn Tokenizer(comptime tokenMap: TokenMap, comptime delims: [] const u8) type
                 return TokError.IdxError;
             }
 
-            return std.mem.containsAtLeast(u8,
-                                        delims,
-                                        1,
-                                        self.in_stream[self.cur_idx..(self.cur_idx + 1)]);
+            return std.mem.containsAtLeast(u8, delims, 1, self.in_stream[self.cur_idx..(self.cur_idx + 1)]);
         }
 
 
@@ -59,8 +56,8 @@ pub fn Tokenizer(comptime tokenMap: TokenMap, comptime delims: [] const u8) type
 
         }
 
-        fn is_token(str: *const [] const u8) bool {
-            return tokenMap.has(str.*);
+        fn is_token(str: [] const u8) bool {
+            return tokenMap.has(str);
         }
 
         fn try_find_token(self: *Self) TokError!?usize {
@@ -70,7 +67,7 @@ pub fn Tokenizer(comptime tokenMap: TokenMap, comptime delims: [] const u8) type
             }
             const begIdx = self.cur_idx;
 
-            var tokLength: usize = @min(@as(usize, maxTokLength), streamSize - self.cur_idx);
+            var tokLength: usize = @min(@as(usize, maxTokLength), streamSize - self.cur_idx - 1);
             var tokSize: ?usize = null;
             var tokType: TokenType = TokenType{
                 .tokenType = null,
@@ -78,11 +75,11 @@ pub fn Tokenizer(comptime tokenMap: TokenMap, comptime delims: [] const u8) type
             };
             while (tokLength > 0) : (tokLength -= 1) {
                 const curTokStr = self.in_stream[begIdx..(begIdx+tokLength)];
-                const isTok = is_token(&curTokStr);
+                const isTok = is_token(curTokStr);
 
                 if (isTok) {
                     const curTokType = tokenMap.get(curTokStr).?;
-                    if (tokType.priority < curTokType.priority) {
+                    if (tokType.priority < curTokType.priority or tokSize == null) {
                         tokType = curTokType;
                         tokSize = tokLength;
                     }
@@ -116,13 +113,18 @@ pub fn Tokenizer(comptime tokenMap: TokenMap, comptime delims: [] const u8) type
 
             var isWhitespace: bool = false;
             while (!isWhitespace) : (self.cur_idx += 1) {
-                // We reached the end of string - break
                 isWhitespace = self.is_whitespace() catch {
-                    break;
+                    // We reached the end of string - return until end of string
+                    const curStr = self.in_stream[begIdx..];
+                    return Token {
+                        .tokenType = tokenMap.get(curStr) orelse .{},
+                        .value = curStr[0..],
+                    };
                 };
             }
 
-            const curStr = self.in_stream[begIdx..self.cur_idx];
+            // We reached a whitespace - return until the current index minus 1
+            const curStr = self.in_stream[begIdx..(self.cur_idx - 1)];
             return Token {
                 .tokenType = tokenMap.get(curStr) orelse .{},
                 .value = curStr[0..],

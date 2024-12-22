@@ -6,6 +6,10 @@ const SymbolType = usize;
 const ArrayList = std.ArrayList;
 const SymbolMap = std.StaticStringMap(Symbol);
 
+const SyntacticError = error {
+    UnclosedBracket,
+};
+
 const SymbolProps = enum(usize) {
     OpenBracket    = 0b1,
     CloseBracket   = 0b10,
@@ -17,10 +21,10 @@ const Symbol = struct {
     const Self = @This();
 
     symbolType: SymbolType,
-    value: [] const u8,
     symbolProps: SymbolProps,
-    nChildren: usize,
-
+    value: [] const u8,
+    nChildrenPre: ?usize,
+    nChildrenPost: ?usize,
 
     pub fn isOpenBracket(self: *const Self) bool {
         return (self.symbolProps & SymbolProps.OpenBracket) == SymbolProps.OpenBracket;
@@ -44,16 +48,16 @@ const ASTNode =  struct {
 
     parent: ?*Self,
     value: ?[] const u8,
-    children: ArrayList(*Self),
     kind: ?Symbol,
+    children: ArrayList(*Self),
 
     pub fn init(allocator: std.mem.Allocator) !*Self {
         const node: *ASTNode = try allocator.create(Self);
         node.* = .{
             .parent = null,
             .value = null,
-            .children = ArrayList(*Self).init(allocator),
             .kind = null,
+            .children = ArrayList(*Self).init(allocator),
         };
         return node;
     }
@@ -67,13 +71,16 @@ const ASTNode =  struct {
     }
 };
 
-pub fn AST(comptime symbolMap: SymbolMap, comptime Tok: tok.Tokenizer, tokenizer: Tok) type {
+pub fn AST(comptime symbolMap: SymbolMap, comptime Tok: tok.Tokenizer) type {
     return struct {
         const Self = @This();
 
-        root: ASTNode,
+        alocator: std.mem.Allocator,
+        root: *ASTNode,
+        current_node: *ASTNode,
+        tokenizer: *Tok,
 
-        pub fn init(allocator: std.mem.Allocator) !Self {
+        pub fn init(allocator: std.mem.Allocator, tokenizer: *Tok) !Self {
             const root: *ASTNode = try ASTNode.init(allocator);
             return Self{
                 .allocator = allocator,
@@ -103,9 +110,11 @@ pub fn AST(comptime symbolMap: SymbolMap, comptime Tok: tok.Tokenizer, tokenizer
             if (symbolMap.get(token.value)) |symbol| {
                 if (symbol.isOpenBracket()) {
                     try self.handleOpenBracket(symbol, token.value);
-                } else if (symbol.isCloseBracket()) {
-                    try self.handleCloseBracket();
-                } else if (symbol.isNaryOp()) {
+                }
+                if (symbol.isCloseBracket()) {
+                    try self.handleCloseBracket(token.value);
+                }
+                if (symbol.isNaryOp()) {
                     try self.handleNaryOp(symbol, token.value);
                 }
             } else {
@@ -123,10 +132,16 @@ pub fn AST(comptime symbolMap: SymbolMap, comptime Tok: tok.Tokenizer, tokenizer
             self.current_node = new_node;
         }
 
-        fn handleCloseBracket(self: *Self) !void {
-            if (self.current_node.parent) |parent| {
-                self.current_node = parent;
+        fn handleCloseBracket(self: *Self, value: []const u8) !void {
+            var cur: ?*ASTNode = self.current_node.parent;
+            while (cur != null) : (cur = cur.parent) {
+                if (cur.kind != null and std.mem.eql(u8, cur.kind.value, value)) {
+                    self.current_node = cur;
+                    return;
+                }
             }
+
+            return SyntacticError.UnclosedBracket;
         }
 
         fn handleNaryOp(self: *Self, symbol: Symbol, value: []const u8) !void {

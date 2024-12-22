@@ -8,6 +8,7 @@ const SymbolMap = std.StaticStringMap(Symbol);
 
 const SyntacticError = error {
     UnclosedBracket,
+    TooManyOperands,
 };
 
 const SymbolProps = enum(usize) {
@@ -51,7 +52,7 @@ const ASTNode =  struct {
     kind: ?Symbol,
     children: ArrayList(*Self),
 
-    pub fn init(allocator: std.mem.Allocator) !*Self {
+    pub fn init(allocator: *std.mem.Allocator) !*Self {
         const node: *ASTNode = try allocator.create(Self);
         node.* = .{
             .parent = null,
@@ -62,7 +63,7 @@ const ASTNode =  struct {
         return node;
     }
 
-    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *Self, allocator: *std.mem.Allocator) void {
         for (self.children.items) |child| {
             child.deinit(allocator);
         }
@@ -75,12 +76,12 @@ pub fn AST(comptime symbolMap: SymbolMap, comptime Tok: tok.Tokenizer) type {
     return struct {
         const Self = @This();
 
-        alocator: std.mem.Allocator,
+        alocator: *std.mem.Allocator,
         root: *ASTNode,
         current_node: *ASTNode,
         tokenizer: *Tok,
 
-        pub fn init(allocator: std.mem.Allocator, tokenizer: *Tok) !Self {
+        pub fn init(allocator: *std.mem.Allocator, tokenizer: *Tok) !Self {
             const root: *ASTNode = try ASTNode.init(allocator);
             return Self{
                 .allocator = allocator,
@@ -128,7 +129,8 @@ pub fn AST(comptime symbolMap: SymbolMap, comptime Tok: tok.Tokenizer) type {
             new_node.kind = symbol;
             new_node.value = value;
             new_node.parent = self.current_node;
-            try self.current_node.children.append(new_node);
+
+            try self.appendNode(new_node);
             self.current_node = new_node;
         }
 
@@ -149,15 +151,40 @@ pub fn AST(comptime symbolMap: SymbolMap, comptime Tok: tok.Tokenizer) type {
             new_node.kind = symbol;
             new_node.value = value;
             new_node.parent = self.current_node;
-            try self.current_node.children.append(new_node);
+
+            // Take n children before
+            const startIdx = self.current_node.children.items.len - symbol.kind.nChildrenPre;
+            try new_node.children.appendSlice(self.current_node.children.items[startIdx..]);
+            self.current_node.children.shrinkRetainingCapacity(startIdx);
+
+            try self.appendNode(new_node);
             self.current_node = new_node;
         }
 
+        fn appendNode(self: *Self, node: *ASTNode) !void {
+            const curNode: *ASTNode = self.current_node;
+            const symKind: *?Symbol = &curNode.kind;
+            const actNChildren = self.current_node.children.items.len;
+            var nChildren: ?usize = null;
+
+            if (symKind) |symbol| {
+                nChildren = symbol.nChildrenPre + symbol.nChildrenPost;
+            }
+
+            if (nChildren != null and nChildren <= actNChildren) {
+                self.current_node = self.current_node.parent orelse {
+                    return SyntacticError.TooManyOperands;
+                };
+            }
+
+            try self.current_node.children.append(node);
+        }
+
         fn handleLiteral(self: *Self, value: []const u8) !void {
-            var new_node = try ASTNode.init(self.allocator);
+            var new_node: *ASTNode = try ASTNode.init(self.allocator);
             new_node.value = value;
             new_node.parent = self.current_node;
-            try self.current_node.children.append(new_node);
+            try self.appendNode(new_node);
         }
     };
 }

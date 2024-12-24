@@ -68,7 +68,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const run_lib_aast_unit_tests = b.addRunArtifact(lib_aast_unit_tests);
-    const test_aast_step = b.step("test_aast", "Run unit tests for tokenizer");
+    const test_aast_step = b.step("test_parser_tree", "Run unit tests for tokenizer");
     test_aast_step.dependOn(&run_lib_aast_unit_tests.step);
 
     const test_step = b.step("test", "Run unit tests");

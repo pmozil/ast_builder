@@ -18,7 +18,6 @@ pub const Token: type = struct {
     value: [] const u8,
 };
 
-
 fn maxKeyLength(comptime Map: TokenMap) comptime_int {
     comptime {
         var max_len: usize = 0;
@@ -37,6 +36,13 @@ pub fn Tokenizer(comptime tokenMap: TokenMap, comptime delims: [] const u8) type
 
         in_stream: [] const u8,
         cur_idx: usize,
+
+        pub fn init(inStream: [] const u8) Self {
+            return .{
+                .in_stream = inStream,
+                .cur_idx = 0,
+            };
+        }
 
         fn is_whitespace(self: *Self) TokError!bool {
             const streamSize: usize = self.in_stream.len;

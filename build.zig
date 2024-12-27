@@ -21,11 +21,19 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const lex = b.addModule("lex", .{
+        .root_source_file = b.path("lib/lexer/lexer.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    lex.addImport("tok", tok);
+
     const aast = b.addModule("aast", .{
         .root_source_file = b.path("lib/aast/aast.zig"),
         .target = target,
         .optimize = optimize,
     });
+    aast.addImport("lex", lex);
     aast.addImport("tok", tok);
 
 
@@ -36,6 +44,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     exe.root_module.addImport("aast", aast);
+    exe.root_module.addImport("lex", lex);
     exe.root_module.addImport("tok", tok);
 
     b.installArtifact(exe);
@@ -51,6 +60,7 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
+    // TODO: Add lexer unit tests
     const lib_tok_unit_tests = b.addTest(.{
         .root_source_file = b.path("lib/tokenizer/tokenizer_test.zig"),
         .target = target,
@@ -61,6 +71,17 @@ pub fn build(b: *std.Build) void {
     const test_tok_step = b.step("test_tok", "Run unit tests for tokenizer");
     test_tok_step.dependOn(&run_lib_tok_unit_tests.step);
 
+    const lib_lex_unit_tests = b.addTest(.{
+        .root_source_file = b.path("lib/lexer/lexer_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    lib_lex_unit_tests.root_module.addImport("tok", tok);
+
+    const run_lib_lex_unit_tests = b.addRunArtifact(lib_lex_unit_tests);
+    const test_lex_step = b.step("test_lex", "Run unit tests for lexer");
+    test_lex_step.dependOn(&run_lib_lex_unit_tests.step);
+
     const lib_aast_unit_tests = b.addTest(.{
         .root_source_file = b.path("lib/aast/aast_test.zig"),
         .target = target,
@@ -68,7 +89,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const run_lib_aast_unit_tests = b.addRunArtifact(lib_aast_unit_tests);
-    const test_aast_step = b.step("test_parser_tree", "Run unit tests for tokenizer");
+    const test_aast_step = b.step("test_ast", "Run unit tests for ast builder");
     test_aast_step.dependOn(&run_lib_aast_unit_tests.step);
 
     const test_step = b.step("test", "Run unit tests");

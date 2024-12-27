@@ -1,36 +1,33 @@
 const std = @import("std");
 const tok = @import("tok");
-const lex = @import("lex");
+const lex = @import("lexer.zig");
 
 const ArrayList = std.ArrayList;
 
-fn printSymbol(sym: *lex.ASTNode, indent: usize) void {
-    for (0..indent) |_| {
-        std.debug.print("\t", .{});
+fn testEq(fst: [] ?[] const u8, snd: ArrayList(*lex.ASTNode)) bool {
+    if (fst.len != snd.items.len) {
+        return false;
     }
-    std.debug.print("Symbol: \"{s}\"\n", .{sym.value orelse "nothing"});
-}
 
-fn printSymbols(vals: *ArrayList(*lex.ASTNode), indent: usize) void {
-    for (vals.items) |sym| {
-        printSymbol(sym, indent);
-        if (sym.children.items.len > 0) {
-            for (0..(indent+1)) |_| {
-                std.debug.print("\t", .{});
+    for (0..fst.len) |nodeIdx| {
+        if (fst[nodeIdx] == null) {
+            if (snd.items[nodeIdx].value != null) {
+                return false;
             }
-            std.debug.print("Children: \n\n", .{});
+            continue;
+        }
 
-            printSymbols(&sym.children, indent + 1);
-
-            for (0..(indent+1)) |_| {
-                std.debug.print("\t", .{});
-            }
-            std.debug.print("End Children: \n\n", .{});
+        if (!std.mem.eql(u8, fst[nodeIdx].?, snd.items[nodeIdx].value.?)) {
+           std.debug.print("Unequal Values: first: {s}, second: {s}\n",
+                .{fst[nodeIdx].?, snd.items[nodeIdx].value.?});
+            return false;
         }
     }
+
+    return true;
 }
 
-pub fn main() !void {
+test "Test tokenizer" {
     const delims = " \n\r";
     const tokenMap = tok.TokenMap.initComptime(&.{
         .{"(",  tok.TokenType{.tokenType = 1, .priority = 0, .breakOnToken = true}},
@@ -99,5 +96,62 @@ pub fn main() !void {
             else => return err,
         };
     }
-    printSymbols(&lexer.symStack, 0);
+
+    var rootLstArr = [_] ?[]const u8{
+        "(",
+        "\"",
+        "(",
+        "(",
+    };
+    var rootLst: []?[]const u8 = rootLstArr[0..];
+    try std.testing.expect(testEq(rootLst, lexer.symStack));
+
+    rootLstArr = [_] ?[]const u8{
+        "open",
+        "bracket",
+        "(",
+        "(",
+    };
+    rootLst = rootLstArr[0..];
+    try std.testing.expect(testEq(rootLst, lexer.symStack.items[0].children));
+
+    var newRootLstArr = [_] ?[]const u8{
+        "inner",
+        "bracket",
+        "\"",
+    };
+    rootLst = newRootLstArr[0..];
+    try std.testing.expect(testEq(rootLst, lexer.symStack.items[0].children.items[2].children));
+
+    var thirdRootLstArr = [_] ?[]const u8{
+        "another",
+    };
+    rootLst = thirdRootLstArr[0..];
+    try std.testing.expect(testEq(rootLst,
+            lexer.symStack.items[0].children.items[2].children.items[2].children));
+
+    rootLstArr = [_] ?[]const u8{
+        "other",
+        "inner",
+        "bracket",
+        "(",
+    };
+    rootLst = rootLstArr[0..];
+    try std.testing.expect(testEq(rootLst, lexer.symStack.items[0].children.items[3].children));
+
+    newRootLstArr = [_] ?[]const u8{
+        "third",
+        "level",
+        "\"",
+    };
+    rootLst = newRootLstArr[0..];
+    try std.testing.expect(testEq(rootLst, lexer.symStack.items[0].children.items[3].children.items[3].children));
+
+    newRootLstArr = [_] ?[]const u8{
+        "also",
+        "other",
+        "here",
+    };
+    rootLst = newRootLstArr[0..];
+    try std.testing.expect(testEq(rootLst, lexer.symStack.items[0].children.items[3].children.items[3].children.items[2].children));
 }

@@ -1,63 +1,64 @@
 const tok = @import("tok");
 const std = @import("std");
 
-const SymbolType = usize;
-
 const ArrayList = std.ArrayList;
-const SymbolMap = std.StaticStringMap(Symbol);
 
-const SyntacticError = error {
+pub const SymbolType = usize;
+pub const SymbolMap = std.StaticStringMap(Symbol);
+
+pub const SyntacticError = error {
     UnclosedBracket,
     TooManyOperands,
 };
 
-const SymbolFlags = enum(usize) {
+pub const SymbolFlags = enum(usize) {
     OpenBracket    = 0b1,
     CloseBracket   = 0b10,
     NaryOp         = 0b100,
-    CanCommute     = 0b1000,
+
+    pub fn asInt(self: SymbolFlags) usize {
+        return @intFromEnum(self);
+    }
 };
 
-const NaryOpProps = struct {
+pub const NaryOpProps = struct {
     opPriority: isize = 0,
+    nChildren: usize,
 };
 
-const BracketProps = struct {
+pub const BracketProps = struct {
     open: [] const u8,
     close: [] const u8,
+    stacking: bool = false,
 };
 
-const SymbolProps = union {
+pub const SymbolProps = union {
     bracket: BracketProps,
     nAryOp: NaryOpProps,
     other: [] const u8,
 };
 
-const Symbol = struct {
+pub const Symbol = struct {
     const Self = @This();
 
     symbolType: SymbolType,
-    symbolProps: SymbolFlags,
+    symbolProps: usize,
     props: SymbolProps,
 
     pub fn isOpenBracket(self: *const Self) bool {
-        return (self.symbolProps & SymbolFlags.OpenBracket) == SymbolFlags.OpenBracket;
+        return (self.symbolProps & SymbolFlags.OpenBracket.asInt()) == SymbolFlags.OpenBracket.asInt();
     }
 
     pub fn isCloseBracket(self: *const Self) bool {
-        return (self.symbolProps & SymbolFlags.CloseBracket) == SymbolFlags.CloseBracket;
+        return (self.symbolProps & SymbolFlags.CloseBracket.asInt()) == SymbolFlags.CloseBracket.asInt();
     }
 
     pub fn isNaryOp(self: *const Self) bool {
-        return (self.symbolProps & SymbolFlags.NaryOp) == SymbolFlags.NaryOp;
-    }
-
-    pub fn childrenCommute(self: *const Self) bool {
-        return (self.symbolProps & SymbolFlags.CanCommute) == SymbolFlags.CanCommute;
+        return (self.symbolProps & SymbolFlags.NaryOp.asInt()) == SymbolFlags.NaryOp.asInt();
     }
 };
 
-const ASTNode =  struct {
+pub const ASTNode =  struct {
     const Self = @This();
 
     parent: ?*Self,
@@ -79,9 +80,9 @@ const ASTNode =  struct {
     pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
         for (self.children.items) |child| {
             child.deinit(allocator);
+            allocator.destroy(child);
         }
         self.children.deinit();
-        allocator.destroy(self);
     }
 };
 
@@ -92,33 +93,55 @@ pub fn Lexer(comptime symbolMap: SymbolMap) type {
         alloc: std.mem.Allocator,
         symStack: ArrayList(*ASTNode),
 
-        pub fn init(alloc: std.mem.Allocator) !Self {
+        pub fn init(alloc: std.mem.Allocator) Self {
             return Self {
                 .alloc = alloc,
-                .symStack = try ArrayList(Symbol).init(alloc),
+                .symStack = ArrayList(*ASTNode).init(alloc),
             };
         }
 
-        pub fn popUntilBracket(self: *Self, kind: Symbol) !void {
+        pub fn deinit(self: *Self) void {
+            for (self.symStack.items) |astNode| {
+                astNode.deinit(self.alloc);
+                self.alloc.destroy(astNode);
+            }
+            self.symStack.deinit();
+        }
+
+        fn popUntilBracket(self: *Self, kind: Symbol) !void {
             const bracketKind: BracketProps = kind.props.bracket;
-            const curNodeIdx: usize = self.symStack.items.len - 1;
-            while (curNodeIdx > 0) : (curNodeIdx -= 1) {
-                const curNode: *ASTNode = self.symStack[curNodeIdx];
+            var curNodeIdx_i: isize = @intCast(self.symStack.items.len - 1);
+            while (curNodeIdx_i >= 0) : (curNodeIdx_i -= 1) {
+                const curNodeIdx: usize = @intCast(curNodeIdx_i);
+                const curNode: *ASTNode = self.symStack.items[curNodeIdx];
                 if (curNode.*.kind) |nodeKind| {
-                    if (nodeKind.isOpenBracket()) {
+                    if (!nodeKind.isOpenBracket()) {
                         continue;
                     }
 
-                    if (!std.mem.eql(u8, nodeKind.value, bracketKind.open)) {
+                    const curProps: BracketProps = nodeKind.props.bracket;
+
+                    if (!std.mem.eql(u8, curProps.open, bracketKind.open)) {
+                        continue;
+                    }
+
+                    if (!std.mem.eql(u8, curProps.close, bracketKind.close)) {
                         continue;
                     }
 
                     if (curNode.children.items.len > 0) {
-                        continue;
+                        if (curProps.stacking) {
+                            continue;
+                        }
+                        return SyntacticError.UnclosedBracket;
                     }
 
                     try curNode.children.appendSlice(self.symStack.items[(curNodeIdx+1)..]);
                     self.symStack.shrinkRetainingCapacity(curNodeIdx + 1);
+                    for (curNode.children.items) |child| {
+                        child.*.parent = curNode;
+                    }
+                    return;
                 }
             }
 
@@ -126,13 +149,30 @@ pub fn Lexer(comptime symbolMap: SymbolMap) type {
         }
 
         pub fn addToken(self: *Self, token: tok.Token) !void {
-            const newNode: ASTNode = ASTNode.init(self.alloc);
+            var newNode: *ASTNode = try ASTNode.init(self.alloc);
             newNode.value = token.value;
             newNode.kind  = symbolMap.get(token.value);
 
             if (newNode.kind) |kind| {
                 if (kind.isCloseBracket()) {
-                    self.popUntilBracket(kind);
+                    self.popUntilBracket(kind) catch |err| switch (err) {
+                        error.UnclosedBracket => {
+                            // In this case, the bracket is an open bracket
+                            // Happens for cases line the string bracket - "
+                            // We then just continue,
+                            // and treat this one line an open bracket
+                            if (!kind.isOpenBracket()) {
+                                return err;
+                            }
+                            try self.symStack.append(newNode);
+                            return;
+                        },
+                        else => {
+                            return err;
+                        },
+                    };
+                    newNode.deinit(self.alloc);
+                    return;
                 }
             }
 

@@ -1,17 +1,18 @@
 const std = @import("std");
 const tok = @import("tok");
 const lex = @import("lex");
+const ast = @import("ast");
 
 const ArrayList = std.ArrayList;
 
-fn printSymbol(sym: *lex.ASTNode, indent: usize) void {
+fn printSymbol(sym: *const lex.ASTNode, indent: usize) void {
     for (0..indent) |_| {
         std.debug.print("\t", .{});
     }
     std.debug.print("Symbol: \"{s}\"\n", .{sym.value orelse "nothing"});
 }
 
-fn printSymbols(vals: *ArrayList(*lex.ASTNode), indent: usize) void {
+fn printSymbols(vals: *const ArrayList(*lex.ASTNode), indent: usize) void {
     for (vals.items) |sym| {
         printSymbol(sym, indent);
         if (sym.children.items.len > 0) {
@@ -99,5 +100,8 @@ pub fn main() !void {
             else => return err,
         };
     }
-    printSymbols(&lexer.symStack, 0);
+
+    const theAst = try ast.AST.init(&lexer.symStack, std.heap.page_allocator);
+    std.debug.print("AST children size: {}\n", .{theAst.symbols.items.len});
+    printSymbols(&theAst.symbols, 0);
 }

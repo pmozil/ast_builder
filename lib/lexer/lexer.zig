@@ -35,15 +35,15 @@ pub const BracketProps = struct {
 pub const SymbolProps = union {
     bracket: BracketProps,
     nAryOp: NaryOpProps,
-    other: [] const u8,
+    other: ?[] const u8,
 };
 
 pub const Symbol = struct {
     const Self = @This();
 
-    symbolType: SymbolType,
-    symbolProps: usize,
-    props: SymbolProps,
+    symbolType: ?SymbolType = null,
+    symbolProps: usize      = 0,
+    props: SymbolProps      = .{.other = null},
 
     pub fn isOpenBracket(self: *const Self) bool {
         return (self.symbolProps & SymbolFlags.OpenBracket.asInt()) == SymbolFlags.OpenBracket.asInt();

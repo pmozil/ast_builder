@@ -28,22 +28,22 @@ pub fn build(b: *std.Build) void {
     });
     lex.addImport("tok", tok);
 
-    const aast = b.addModule("aast", .{
-        .root_source_file = b.path("lib/aast/aast.zig"),
+    const ast = b.addModule("ast", .{
+        .root_source_file = b.path("lib/ast/ast.zig"),
         .target = target,
         .optimize = optimize,
     });
-    aast.addImport("lex", lex);
-    aast.addImport("tok", tok);
+    ast.addImport("lex", lex);
+    ast.addImport("tok", tok);
 
 
     const exe = b.addExecutable(.{
-        .name = "aast",
+        .name = "ast",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
-    exe.root_module.addImport("aast", aast);
+    exe.root_module.addImport("ast", ast);
     exe.root_module.addImport("lex", lex);
     exe.root_module.addImport("tok", tok);
 
@@ -82,17 +82,17 @@ pub fn build(b: *std.Build) void {
     const test_lex_step = b.step("test_lex", "Run unit tests for lexer");
     test_lex_step.dependOn(&run_lib_lex_unit_tests.step);
 
-    const lib_aast_unit_tests = b.addTest(.{
-        .root_source_file = b.path("lib/aast/aast_test.zig"),
+    const lib_ast_unit_tests = b.addTest(.{
+        .root_source_file = b.path("lib/ast/ast_test.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const run_lib_aast_unit_tests = b.addRunArtifact(lib_aast_unit_tests);
-    const test_aast_step = b.step("test_ast", "Run unit tests for ast builder");
-    test_aast_step.dependOn(&run_lib_aast_unit_tests.step);
+    const run_lib_ast_unit_tests = b.addRunArtifact(lib_ast_unit_tests);
+    const test_ast_step = b.step("test_ast", "Run unit tests for ast builder");
+    test_ast_step.dependOn(&run_lib_ast_unit_tests.step);
 
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_lib_aast_unit_tests.step);
+    test_step.dependOn(&run_lib_ast_unit_tests.step);
     test_step.dependOn(&run_lib_tok_unit_tests.step);
 }

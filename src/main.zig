@@ -37,10 +37,13 @@ pub fn main() !void {
         .{"(",  tok.TokenType{.tokenType = 1, .priority = 0, .breakOnToken = true}},
         .{")",  tok.TokenType{.tokenType = 2, .priority = 0, .breakOnToken = true}},
         .{"\"", tok.TokenType{.tokenType = 3, .priority = 0, .breakOnToken = true}},
+        .{"+",  tok.TokenType{.tokenType = 4, .priority = 0, .breakOnToken = true}},
+        .{"*",  tok.TokenType{.tokenType = 5, .priority = 0, .breakOnToken = true}},
     });
     const TokenizerType: type = tok.Tokenizer(tokenMap, delims);
 
-    const string: []const u8 = "(open bracket(inner bracket \"another\") (other inner bracket (third level \"also other here\"))) \"abcd\" () (\"\")";
+    // const string: []const u8 = "(open bracket(inner  + bracket + \"another\") + (other + inner bracket (third level \"also other here\"))) \"abcd\" () (\"\")";
+    const string: []const u8 = "3 + 5 + (2 + 1 * 3 * (1 * 2 + 5))";
     var tokenizer: TokenizerType = TokenizerType.init(string);
 
     const lexerMap = lex.SymbolMap.initComptime(&.{
@@ -81,6 +84,30 @@ pub fn main() !void {
                         .close = "\"",
                         .stacking = false,
                     }
+                }
+            }
+        },
+        .{"+",
+            lex.Symbol{
+                .symbolType = 4,
+                .symbolProps = lex.SymbolFlags.Operator.asInt(),
+                .props = lex.SymbolProps{
+                    .operator = lex.OperatorProps{
+                        .opPriority = 0,
+                        .nChildren = 2,
+                    },
+                }
+            }
+        },
+        .{"*",
+            lex.Symbol{
+                .symbolType = 5,
+                .symbolProps = lex.SymbolFlags.Operator.asInt(),
+                .props = lex.SymbolProps{
+                    .operator = lex.OperatorProps{
+                        .opPriority = 1,
+                        .nChildren  = 2,
+                    },
                 }
             }
         },

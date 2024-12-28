@@ -75,7 +75,7 @@ pub fn Tokenizer(comptime tokenMap: TokenMap, comptime delims: [] const u8) type
             }
             const begIdx = self.cur_idx;
 
-            var tokLength: usize = @min(@as(usize, maxTokLength), streamSize - self.cur_idx - 1);
+            var tokLength: usize = @min(@as(usize, maxTokLength), streamSize - self.cur_idx);
             var tokSize: ?usize = null;
             var tokType: TokenType = TokenType{
                 .tokenType = null,

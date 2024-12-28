@@ -14,14 +14,14 @@ pub const SyntacticError = error {
 pub const SymbolFlags = enum(usize) {
     OpenBracket    = 0b1,
     CloseBracket   = 0b10,
-    NaryOp         = 0b100,
+    Operator       = 0b100,
 
     pub fn asInt(self: SymbolFlags) usize {
         return @intFromEnum(self);
     }
 };
 
-pub const NaryOpProps = struct {
+pub const OperatorProps = struct {
     opPriority: isize = 0,
     nChildren: usize,
 };
@@ -33,8 +33,8 @@ pub const BracketProps = struct {
 };
 
 pub const SymbolProps = union {
-    bracket: BracketProps,
-    nAryOp: NaryOpProps,
+    bracket:  BracketProps,
+    operator: OperatorProps,
     other: ?[] const u8,
 };
 
@@ -53,8 +53,8 @@ pub const Symbol = struct {
         return (self.symbolProps & SymbolFlags.CloseBracket.asInt()) == SymbolFlags.CloseBracket.asInt();
     }
 
-    pub fn isNaryOp(self: *const Self) bool {
-        return (self.symbolProps & SymbolFlags.NaryOp.asInt()) == SymbolFlags.NaryOp.asInt();
+    pub fn isOperator(self: *const Self) bool {
+        return (self.symbolProps & SymbolFlags.Operator.asInt()) == SymbolFlags.Operator.asInt();
     }
 };
 

@@ -39,11 +39,12 @@ pub fn main() !void {
         .{"\"", tok.TokenType{.tokenType = 3, .priority = 0, .breakOnToken = true}},
         .{"+",  tok.TokenType{.tokenType = 4, .priority = 0, .breakOnToken = true}},
         .{"*",  tok.TokenType{.tokenType = 5, .priority = 0, .breakOnToken = true}},
+        .{";",  tok.TokenType{.tokenType = 6, .priority = 0, .breakOnToken = true}},
     });
     const TokenizerType: type = tok.Tokenizer(tokenMap, delims);
 
     // const string: []const u8 = "(open bracket(inner  + bracket + \"another\") + (other + inner bracket (third level \"also other here\"))) \"abcd\" () (\"\")";
-    const string: []const u8 = "3 + 5 + (2 + 1 * 3 * (1 * 2 + 5))";
+    const string: []const u8 = "3 + 5; 1 + (2 + 3; 10);";
     var tokenizer: TokenizerType = TokenizerType.init(string);
 
     const lexerMap = lex.SymbolMap.initComptime(&.{
@@ -111,6 +112,12 @@ pub fn main() !void {
                 }
             }
         },
+        .{";",
+            lex.Symbol{
+                .symbolType = 5,
+                .symbolProps = lex.SymbolFlags.Semicolon.asInt(),
+            }
+        },
     });
     const LexerType: type = lex.Lexer(lexerMap);
     var lexer = LexerType.init(std.heap.page_allocator);
@@ -129,6 +136,5 @@ pub fn main() !void {
     }
 
     const theAst = try ast.AST.init(&lexer.symStack, std.heap.page_allocator);
-    std.debug.print("AST children size: {}\n", .{theAst.symbols.items.len});
-    printSymbols(&theAst.symbols, 0);
+    printSymbols(&theAst.root.*.children, 0);
 }

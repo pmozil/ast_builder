@@ -15,6 +15,7 @@ pub const SymbolFlags = enum(usize) {
     OpenBracket    = 0b1,
     CloseBracket   = 0b10,
     Operator       = 0b100,
+    Semicolon      = 0b1000,
 
     pub fn asInt(self: SymbolFlags) usize {
         return @intFromEnum(self);
@@ -56,11 +57,16 @@ pub const Symbol = struct {
     pub fn isOperator(self: *const Self) bool {
         return (self.symbolProps & SymbolFlags.Operator.asInt()) == SymbolFlags.Operator.asInt();
     }
+
+    pub fn isSemicolon(self: *const Self) bool {
+        return (self.symbolProps & SymbolFlags.Semicolon.asInt()) == SymbolFlags.Semicolon.asInt();
+    }
 };
 
 pub const ASTNode =  struct {
     const Self = @This();
 
+    alloc: std.mem.Allocator,
     parent: ?*Self,
     value: ?[] const u8,
     kind: ?Symbol,
@@ -69,6 +75,7 @@ pub const ASTNode =  struct {
     pub fn init(allocator: std.mem.Allocator) !*Self {
         const node: *ASTNode = try allocator.create(Self);
         node.* = .{
+            .alloc = allocator,
             .parent = null,
             .value = null,
             .kind = null,
@@ -77,10 +84,11 @@ pub const ASTNode =  struct {
         return node;
     }
 
-    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *Self) void {
         for (self.children.items) |child| {
-            child.deinit(allocator);
-            allocator.destroy(child);
+            child.deinit();
+            const alloc: std.mem.Allocator = child.alloc;
+            alloc.destroy(child);
         }
         self.children.deinit();
     }
@@ -102,7 +110,7 @@ pub fn Lexer(comptime symbolMap: SymbolMap) type {
 
         pub fn deinit(self: *Self) void {
             for (self.symStack.items) |astNode| {
-                astNode.deinit(self.alloc);
+                astNode.deinit();
                 self.alloc.destroy(astNode);
             }
             self.symStack.deinit();
@@ -171,7 +179,7 @@ pub fn Lexer(comptime symbolMap: SymbolMap) type {
                             return err;
                         },
                     };
-                    newNode.deinit(self.alloc);
+                    newNode.deinit();
                     return;
                 }
             }

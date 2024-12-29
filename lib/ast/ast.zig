@@ -14,14 +14,28 @@ const ASTNode: type = lex.ASTNode;
 pub const AST = struct {
     const Self = @This();
 
-    symbols: ArrayList(*ASTNode),
+    alloc: std.mem.Allocator,
+    root: *ASTNode,
 
     pub fn init(symArray: *ArrayList(*ASTNode), alloc: std.mem.Allocator) !Self {
-        const result: Self = .{
-            .symbols = try convertToAST(symArray, alloc),
-        };
+        const node: *ASTNode = try ASTNode.init(alloc);
+        node.*.children.deinit();
+        node.*.children = symArray.*;
+
         symArray.* = ArrayList(*ASTNode).init(alloc);
-        return result;
+
+        try preprocessSemicolons(node, alloc);
+        node.*.children = try convertToAST(&node.*.children, alloc);
+
+        return Self{
+            .alloc = alloc,
+            .root = node,
+        };
+    }
+
+    pub fn deinit(self: *Self) !void {
+        self.root.*.deinit();
+        self.alloc.destroy(self.root);
     }
 
     fn hasLowerPriority(priority: isize, nodeOpt: ?*ASTNode) bool {
@@ -53,6 +67,57 @@ pub const AST = struct {
         const fstPoppedIdx: usize = vals.*.items.len - operatorProps.nChildren;
         try node.*.children.appendSlice(vals.*.items[fstPoppedIdx..]);
         vals.shrinkRetainingCapacity(fstPoppedIdx);
+    }
+
+    fn preprocessSemicolons(node: *ASTNode, alloc: std.mem.Allocator) !void {
+        var hasSemicolons: bool = false;
+        for (node.*.children.items) |childNode| {
+            if (childNode.kind) |childNodeKind| {
+                if (childNodeKind.isSemicolon()) {
+                    hasSemicolons = true;
+                    break;
+                }
+            }
+        }
+        if (!hasSemicolons) {
+            return;
+        }
+
+        var vals: ArrayList(*ASTNode) = ArrayList(*ASTNode).init(alloc);
+        var curNode: *ASTNode = try ASTNode.init(alloc);
+
+        for (node.*.children.items) |childNode| {
+            if (childNode.kind) |childNodeKind| {
+                if (childNodeKind.isSemicolon()) {
+                    if (curNode.children.items.len == 0) {
+                        continue;
+                    }
+
+                    try vals.append(curNode);
+                    curNode = try ASTNode.init(alloc);
+                    childNode.deinit();
+                    const childAlloc = childNode.alloc;
+                    childAlloc.destroy(childNode);
+                    continue;
+                }
+            }
+
+            if (childNode.children.items.len > 0) {
+                try preprocessSemicolons(childNode, alloc);
+            }
+
+            try curNode.*.children.append(childNode);
+        }
+
+        if (curNode.*.children.items.len > 0) {
+            try vals.append(curNode);
+        } else {
+            curNode.deinit();
+            alloc.destroy(curNode);
+        }
+
+        node.*.children.deinit();
+        node.*.children = vals;
     }
 
     fn convertToAST(vals: *ArrayList(*ASTNode), alloc: std.mem.Allocator) !ArrayList(*ASTNode)

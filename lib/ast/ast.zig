@@ -20,12 +20,23 @@ pub const AST = struct {
     pub fn init(symArray: *ArrayList(*ASTNode), alloc: std.mem.Allocator) !Self {
         const node: *ASTNode = try ASTNode.init(alloc);
         node.*.children.deinit();
-        node.*.children = symArray.*;
 
-        symArray.* = ArrayList(*ASTNode).init(alloc);
+        preprocessSemicolons(symArray, alloc) catch |err| {
+            for (symArray.*.items) |item| {
+                const curAlloc = item.*.alloc;
+                item.*.deinit();
+                curAlloc.destroy(item);
+            }
+            symArray.*.deinit();
+            return err;
+        };
 
-        try preprocessSemicolons(node, alloc);
-        node.*.children = try convertToAST(&node.*.children, alloc);
+        node.*.children = try convertToAST(symArray, alloc);
+        for (node.*.children.items) |item| {
+            item.*.parent = node;
+        }
+
+        symArray.*.clearRetainingCapacity();
 
         return Self{
             .alloc = alloc,
@@ -33,9 +44,10 @@ pub const AST = struct {
         };
     }
 
-    pub fn deinit(self: *Self) !void {
+    pub fn deinit(self: *const Self) void {
         self.root.*.deinit();
-        self.alloc.destroy(self.root);
+        const alloc: std.mem.Allocator = self.root.*.alloc;
+        alloc.destroy(self.root);
     }
 
     fn hasLowerPriority(priority: isize, nodeOpt: ?*ASTNode) bool {
@@ -69,9 +81,9 @@ pub const AST = struct {
         vals.shrinkRetainingCapacity(fstPoppedIdx);
     }
 
-    fn preprocessSemicolons(node: *ASTNode, alloc: std.mem.Allocator) !void {
+    fn preprocessSemicolons(origVals: *ArrayList(*ASTNode), alloc: std.mem.Allocator) !void {
         var hasSemicolons: bool = false;
-        for (node.*.children.items) |childNode| {
+        for (origVals.*.items) |childNode| {
             if (childNode.kind) |childNodeKind| {
                 if (childNodeKind.isSemicolon()) {
                     hasSemicolons = true;
@@ -86,15 +98,35 @@ pub const AST = struct {
         var vals: ArrayList(*ASTNode) = ArrayList(*ASTNode).init(alloc);
         var curNode: *ASTNode = try ASTNode.init(alloc);
 
-        for (node.*.children.items) |childNode| {
+        for (origVals.*.items) |childNode| {
             if (childNode.kind) |childNodeKind| {
                 if (childNodeKind.isSemicolon()) {
                     if (curNode.children.items.len == 0) {
                         continue;
                     }
 
-                    try vals.append(curNode);
-                    curNode = try ASTNode.init(alloc);
+                    vals.append(curNode) catch |err| {
+                        for (vals.items) |item| {
+                            const curAlloc = item.*.alloc;
+                            item.*.deinit();
+                            curAlloc.destroy(item);
+                        }
+                        vals.deinit();
+                        curNode.deinit();
+                        alloc.destroy(curNode);
+                        return err;
+                    };
+                    curNode = ASTNode.init(alloc) catch |err| {
+                        for (vals.items) |item| {
+                            const curAlloc = item.*.alloc;
+                            item.*.deinit();
+                            curAlloc.destroy(item);
+                        }
+                        vals.deinit();
+                        curNode.deinit();
+                        alloc.destroy(curNode);
+                        return err;
+                    };
                     childNode.deinit();
                     const childAlloc = childNode.alloc;
                     childAlloc.destroy(childNode);
@@ -103,21 +135,52 @@ pub const AST = struct {
             }
 
             if (childNode.children.items.len > 0) {
-                try preprocessSemicolons(childNode, alloc);
+                preprocessSemicolons(&childNode.*.children, alloc) catch |err| {
+                    for (vals.items) |item| {
+                        const curAlloc = item.*.alloc;
+                        item.*.deinit();
+                        curAlloc.destroy(item);
+                    }
+                    vals.deinit();
+                    curNode.deinit();
+                    alloc.destroy(curNode);
+                    return err;
+                };
             }
 
-            try curNode.*.children.append(childNode);
+            curNode.*.children.append(childNode) catch |err| {
+                for (vals.items) |item| {
+                    const curAlloc = item.*.alloc;
+                    item.*.deinit();
+                    curAlloc.destroy(item);
+                    return err;
+                }
+                vals.deinit();
+                curNode.deinit();
+                alloc.destroy(curNode);
+            };
+            childNode.*.parent = curNode;
         }
 
         if (curNode.*.children.items.len > 0) {
-            try vals.append(curNode);
+            vals.append(curNode) catch |err| {
+                for (vals.items) |item| {
+                    const curAlloc = item.*.alloc;
+                    item.*.deinit();
+                    curAlloc.destroy(item);
+                    return err;
+                }
+                vals.deinit();
+                curNode.deinit();
+                alloc.destroy(curNode);
+            };
         } else {
             curNode.deinit();
             alloc.destroy(curNode);
         }
 
-        node.*.children.deinit();
-        node.*.children = vals;
+        origVals.*.deinit();
+        origVals.* = vals;
     }
 
     fn convertToAST(vals: *ArrayList(*ASTNode), alloc: std.mem.Allocator) !ArrayList(*ASTNode)
@@ -130,13 +193,32 @@ pub const AST = struct {
         for (vals.*.items) |node| {
             if (node.*.children.items.len > 0) {
                 var array = node.*.children;
-                node.*.children = try convertToAST(&array, alloc);
+                node.*.children = convertToAST(&array, alloc) catch |err| {
+                    for (result.items) |item| {
+                        const curAlloc = item.*.alloc;
+                        item.*.deinit();
+                        curAlloc.destroy(item);
+                    }
+                    result.deinit();
+                    return err;
+                };
+                for (node.*.children.items) |item| {
+                    item.*.parent = node;
+                }
                 array.deinit();
             }
 
             if (node.*.kind) |nodeKind| {
                 if (!nodeKind.isOperator()) {
-                    try result.append(node);
+                    result.append(node) catch |err| {
+                        for (result.items) |item| {
+                            const curAlloc = item.*.alloc;
+                            item.*.deinit();
+                            curAlloc.destroy(item);
+                        }
+                        result.deinit();
+                        return err;
+                    };
                     continue;
                 }
 
@@ -146,21 +228,70 @@ pub const AST = struct {
                     hasLowerPriority(priority, stack.getLast()))
                 {
                     const curNode: *ASTNode = stack.pop();
-                    try popIntoOperator(&result, curNode);
-                    try result.append(curNode);
+                    popIntoOperator(&result, curNode) catch |err| {
+                        for (result.items) |item| {
+                            const curAlloc = item.*.alloc;
+                            item.*.deinit();
+                            curAlloc.destroy(item);
+                        }
+                        result.deinit();
+                        return err;
+                    };
+                    result.append(curNode) catch |err| {
+                        for (result.items) |item| {
+                            const curAlloc = item.*.alloc;
+                            item.*.deinit();
+                            curAlloc.destroy(item);
+                        }
+                        result.deinit();
+                        return err;
+                    };
                 }
-                try stack.append(node);
+                stack.append(node) catch |err| {
+                    for (result.items) |item| {
+                        const curAlloc = item.*.alloc;
+                        item.*.deinit();
+                        curAlloc.destroy(item);
+                    }
+                    result.deinit();
+                    return err;
+                };
 
                 continue;
             }
 
-            try result.append(node);
+            result.append(node) catch |err| {
+                for (result.items) |item| {
+                    const curAlloc = item.*.alloc;
+                    item.*.deinit();
+                    curAlloc.destroy(item);
+                }
+                result.deinit();
+                return err;
+            };
         }
 
         while (stack.items.len > 0) {
             const curNode: *ASTNode = stack.pop();
-            try popIntoOperator(&result, curNode);
-            try result.append(curNode);
+            popIntoOperator(&result, curNode) catch |err| {
+                for (result.items) |item| {
+                    const curAlloc = item.*.alloc;
+                    item.*.deinit();
+                   curAlloc.destroy(item);
+                }
+                result.deinit();
+                return err;
+            };
+
+            result.append(curNode) catch |err| {
+                for (result.items) |item| {
+                    const curAlloc = item.*.alloc;
+                    item.*.deinit();
+                    curAlloc.destroy(item);
+                }
+                result.deinit();
+                return err;
+            };
         }
 
         return result;

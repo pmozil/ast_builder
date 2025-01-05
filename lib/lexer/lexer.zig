@@ -84,13 +84,14 @@ pub const ASTNode =  struct {
         return node;
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: *const Self) void {
+        defer self.children.deinit();
+
         for (self.children.items) |child| {
-            child.deinit();
+            child.*.deinit();
             const alloc: std.mem.Allocator = child.alloc;
             alloc.destroy(child);
         }
-        self.children.deinit();
     }
 };
 
@@ -111,7 +112,8 @@ pub fn Lexer(comptime symbolMap: SymbolMap) type {
         pub fn deinit(self: *Self) void {
             for (self.symStack.items) |astNode| {
                 astNode.deinit();
-                self.alloc.destroy(astNode);
+                const alloc = astNode.*.alloc;
+                alloc.destroy(astNode);
             }
             self.symStack.deinit();
         }
@@ -170,16 +172,24 @@ pub fn Lexer(comptime symbolMap: SymbolMap) type {
                             // We then just continue,
                             // and treat this one line an open bracket
                             if (!kind.isOpenBracket()) {
+                                newNode.deinit();
+                                const alloc = newNode.*.alloc;
+                                alloc.destroy(newNode);
                                 return err;
                             }
                             try self.symStack.append(newNode);
                             return;
                         },
                         else => {
+                            newNode.deinit();
+                            const alloc = newNode.*.alloc;
+                            alloc.destroy(newNode);
                             return err;
                         },
                     };
                     newNode.deinit();
+                    const alloc = newNode.*.alloc;
+                    alloc.destroy(newNode);
                     return;
                 }
             }

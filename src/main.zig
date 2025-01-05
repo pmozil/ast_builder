@@ -32,19 +32,32 @@ fn printSymbols(vals: *const ArrayList(*lex.ASTNode), indent: usize) void {
 }
 
 pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const alloc = gpa.allocator();
+    defer std.debug.assert(gpa.deinit() == .ok);
+
     const delims = " \n\r";
     const tokenMap = tok.TokenMap.initComptime(&.{
-        .{"(",  tok.TokenType{.tokenType = 1, .priority = 0, .breakOnToken = true}},
-        .{")",  tok.TokenType{.tokenType = 2, .priority = 0, .breakOnToken = true}},
-        .{"\"", tok.TokenType{.tokenType = 3, .priority = 0, .breakOnToken = true}},
-        .{"+",  tok.TokenType{.tokenType = 4, .priority = 0, .breakOnToken = true}},
-        .{"*",  tok.TokenType{.tokenType = 5, .priority = 0, .breakOnToken = true}},
-        .{";",  tok.TokenType{.tokenType = 6, .priority = 0, .breakOnToken = true}},
+        .{"(",   tok.TokenType{.tokenType = 1, .priority = 0, .breakOnToken = true}},
+        .{")",   tok.TokenType{.tokenType = 2, .priority = 0, .breakOnToken = true}},
+        .{"\"",  tok.TokenType{.tokenType = 3, .priority = 0, .breakOnToken = true}},
+        .{"+",   tok.TokenType{.tokenType = 4, .priority = 0, .breakOnToken = true}},
+        .{"*",   tok.TokenType{.tokenType = 5, .priority = 0, .breakOnToken = true}},
+        .{";",   tok.TokenType{.tokenType = 6, .priority = 0, .breakOnToken = true}},
+        .{"{",   tok.TokenType{.tokenType = 7, .priority = 0, .breakOnToken = true}},
+        .{"}",   tok.TokenType{.tokenType = 8, .priority = 0, .breakOnToken = true}},
+        .{"=",   tok.TokenType{.tokenType = 9, .priority = 0, .breakOnToken = true}},
+        .{"if",  tok.TokenType{.tokenType = 10, .priority = 0, .breakOnToken = true}},
     });
     const TokenizerType: type = tok.Tokenizer(tokenMap, delims);
 
-    // const string: []const u8 = "(open bracket(inner  + bracket + \"another\") + (other + inner bracket (third level \"also other here\"))) \"abcd\" () (\"\")";
-    const string: []const u8 = "3 + 5; 1 + (2 + 3; 10);";
+    const string: []const u8 =
+        \\ {
+        \\ if (a * b) {
+        \\   c = 10 * x;
+        \\ }
+        \\ }
+    ;
     var tokenizer: TokenizerType = TokenizerType.init(string);
 
     const lexerMap = lex.SymbolMap.initComptime(&.{
@@ -118,9 +131,59 @@ pub fn main() !void {
                 .symbolProps = lex.SymbolFlags.Semicolon.asInt(),
             }
         },
+        .{"{",
+            lex.Symbol{
+                .symbolType = 6,
+                .symbolProps = lex.SymbolFlags.OpenBracket.asInt(),
+                .props = lex.SymbolProps{
+                    .bracket = lex.BracketProps{
+                        .open = "{",
+                        .close = "}",
+                        .stacking = true,
+                    }
+                }
+            }
+        },
+        .{"}",
+            lex.Symbol{
+                .symbolType = 7,
+                .symbolProps = lex.SymbolFlags.CloseBracket.asInt(),
+                .props = lex.SymbolProps{
+                    .bracket = lex.BracketProps{
+                        .open = "{",
+                        .close = "}",
+                        .stacking = true,
+                    }
+                }
+            }
+        },
+        .{"=",
+            lex.Symbol{
+                .symbolType = 8,
+                .symbolProps = lex.SymbolFlags.Operator.asInt(),
+                .props = lex.SymbolProps{
+                    .operator = lex.OperatorProps{
+                        .opPriority = -100,
+                        .nChildren  = 2,
+                    },
+                }
+            }
+        },
+        .{"if",
+            lex.Symbol{
+                .symbolType = 9,
+                .symbolProps = lex.SymbolFlags.Operator.asInt(),
+                .props = lex.SymbolProps{
+                    .operator = lex.OperatorProps{
+                        .opPriority = -10,
+                        .nChildren  = 2,
+                    },
+                }
+            }
+        },
     });
     const LexerType: type = lex.Lexer(lexerMap);
-    var lexer = LexerType.init(std.heap.page_allocator);
+    var lexer = LexerType.init(alloc);
     defer lexer.deinit();
 
     while (true) {
@@ -135,6 +198,7 @@ pub fn main() !void {
         };
     }
 
-    const theAst = try ast.AST.init(&lexer.symStack, std.heap.page_allocator);
+    const theAst = try ast.AST.init(&lexer.symStack, alloc);
+    defer theAst.deinit();
     printSymbols(&theAst.root.*.children, 0);
 }

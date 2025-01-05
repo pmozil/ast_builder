@@ -87,6 +87,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    lib_ast_unit_tests.root_module.addImport("tok", tok);
+    lib_ast_unit_tests.root_module.addImport("lex", lex);
+    lib_ast_unit_tests.root_module.addImport("ast", ast);
 
     const run_lib_ast_unit_tests = b.addRunArtifact(lib_ast_unit_tests);
     const test_ast_step = b.step("test_ast", "Run unit tests for ast builder");
